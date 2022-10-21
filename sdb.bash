@@ -35,9 +35,9 @@ __internal_vars() {
         $0 ~ filename && hashsection { print $1 }
     '
 
-    __AWK_FIND_REQUIRED_PACKAGES='
+    __AWK_FIND_PACKAGES_BY_PRIORITY='
         /^Package:/ { pkgname=$2 }
-        /^Priority:/ && $2 == "required" { print pkgname }
+        /^Priority:/ && $2 == priority { print pkgname }
     '
 
     __AWK_FIND_PACKAGES_FILENAMES='
@@ -95,9 +95,6 @@ download_pkgs() {
 
     # Populate our packages "cache" in memory
     [[ ${__PACKAGES_FETCHED} == 0 ]] && fetch_packages_list
-
-    # Add all packages with 'Priority: Required'
-    __pkgs+=( $(awk "${__AWK_FIND_REQUIRED_PACKAGES}" <<< "${__PACKAGES}") )
 
     # Convert bash array into comma,seperated,string
     local pkgs_csv="$(IFS=,; echo "${__pkgs[*]}")"
@@ -258,9 +255,24 @@ bootstrap_config() {
     chmod 755 "${prevent_service_startup[@]}"
 }
 
+populate_pkgs_from_priority() {
+    local -n __pkgs="$1"; shift
+    local priority="$1";  shift
+
+    # Populate our packages "cache" in memory
+    [[ ${__PACKAGES_FETCHED} == 0 ]] && fetch_packages_list
+
+    # Add all packages with 'Priority: required'
+    __pkgs+=( $( \
+        awk -v priority="${priority}" \
+            "${__AWK_FIND_PACKAGES_BY_PRIORITY}" <<< "${__PACKAGES}"
+    ) )
+}
+
 bootstrap_base() {
     local target="$1"; shift
     local pkgs=()
+    populate_pkgs_from_priority pkgs "required"
     download_pkgs "${target}" pkgs
 
     for deb in ${target}/sdb_temp/*.deb; do
@@ -272,36 +284,16 @@ bootstrap_base() {
 install_base() {
     local target="$1"; shift
     local pkgs=()
-    local debs=()
+    populate_pkgs_from_priority pkgs "required"
 
-    # HACK
-    # Even in debootstrap, these deps are spelled out explicitly... All the info
-    # we need to make this list exists in the $__PACKAGES variable. maybe some
-    # more awk magic makes this hardcoded list go away?
-    # all of these are all non-duplicate requirements listed for apt
-    pkgs+=( apt )
-    # Add direct apt requirements
-    pkgs+=(
-        adduser
-        gpgv
-        libapt-pkg6.0
-        libgnutls30
-        libseccomp2
-        libstdc++6
-        ubuntu-keyring
-    )
-    # Add dependencies of direct apt requirements
-    pkgs+=(
-        libffi8
-        libhogweed6
-        libidn2-0
-        libnettle8
-        libp11-kit0
-        libtasn1-6
-        libunistring2
-        libxxhash0
-    )
-    #ENDHACK
+    # Instead of manually declaring apt, we can use the "important" tag to get
+    # apt plus the most common utilities you would expect
+    # TODO: This is too bloated for a container base, but im more comfortable
+    #       with this than manually declaring deps
+    populate_pkgs_from_priority pkgs "important"
+
+    # Even more packages, including snap and other very non-essential bits
+    #populate_pkgs_from_priority pkgs "standard"
 
     download_pkgs "${target}" pkgs
     install_pkgs  "${target}"
@@ -482,10 +474,7 @@ _sdb() {
 	########
 	# All Done!
 	#
-	# Target directory ("${target}")
-	# has been bootstrapped with dpkg/apt, but not an init system.
-	#
-	# Use 'systemd-nspawn -D "${target}" bash' to spawn a shell
+	# Target directory ("${target}") has been bootstrapped
 	########
 	EOF
 }
