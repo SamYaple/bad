@@ -3,20 +3,20 @@
 default_vars() {
     # An nginx caching proxy is expected but not required. Multiple downloads of
     # the same file happen during the bootstrap process.
-    SDB_PROXY="${SDB_PROXY:-}"
+    BAD_PROXY="${BAD_PROXY:-}"
 
-    SDB_PARALLEL="${SDB_PARALLEL:-$(getconf _NPROCESSORS_ONLN)}"
+    BAD_PARALLEL="${BAD_PARALLEL:-$(getconf _NPROCESSORS_ONLN)}"
 
     ## Aarch64/arm64 builds would export these vars
-    #SDB_ARCH="arm64"
-    #SDB_APT_SOURCES_URL="ports.ubuntu.com/ubuntu-ports"
-    SDB_ARCH="${SDB_ARCH:-amd64}"
-    SDB_APT_SOURCES_URL="${SDB_APT_SOURCES_URL:-archive.ubuntu.com/ubuntu}"
-    SDB_APT_RELEASE="${SDB_APT_RELEASE:-jammy}"
+    #BAD_ARCH="arm64"
+    #BAD_APT_SOURCES_URL="ports.ubuntu.com/ubuntu-ports"
+    BAD_ARCH="${BAD_ARCH:-amd64}"
+    BAD_APT_SOURCES_URL="${BAD_APT_SOURCES_URL:-archive.ubuntu.com/ubuntu}"
+    BAD_APT_RELEASE="${BAD_APT_RELEASE:-jammy}"
 
     # HACK: Having the user pass a bash array for packages is problematic
     #       statically defining my desired endstate for now
-    SDB_APT_COMPONENTS=(
+    BAD_APT_COMPONENTS=(
         main
         universe
         multiverse
@@ -68,23 +68,23 @@ fetch_packages_list() {
     # HACK: take first component in list (hopefully its main lol)
     #       seriously though, this needs to be main and this function should
     #       fetch multiple lists kinda like apt does....
-    local component="${SDB_APT_COMPONENTS}"
+    local component="${BAD_APT_COMPONENTS}"
 
-    local base_url="http://${SDB_APT_SOURCES_URL}/dists/${SDB_APT_RELEASE}"
+    local base_url="http://${BAD_APT_SOURCES_URL}/dists/${BAD_APT_RELEASE}"
     local inrelease_url="${base_url}/InRelease"
-    __INRELEASE=$(curl --proxy "${SDB_PROXY}" "${inrelease_url}")
+    __INRELEASE=$(curl --proxy "${BAD_PROXY}" "${inrelease_url}")
 
     local hashtype="SHA256"
-    local filename="${component}/binary-${SDB_ARCH}/Packages.xz"
+    local filename="${component}/binary-${BAD_ARCH}/Packages.xz"
     local package_hash=$( \
         awk -v hashtype="${hashtype}" \
             -v filename="${filename}" \
             "${__AWK_FIND_PACKAGE_HASH}" <<< "${__INRELEASE}"
     )
 
-    local packages_url="${base_url}/${component}/binary-${SDB_ARCH}"
+    local packages_url="${base_url}/${component}/binary-${BAD_ARCH}"
     packages_url="${packages_url}/by-hash/${hashtype}/${package_hash}"
-    __PACKAGES=$(curl --proxy "${SDB_PROXY}" "${packages_url}" | xz -d)
+    __PACKAGES=$(curl --proxy "${BAD_PROXY}" "${packages_url}" | xz -d)
 
     __PACKAGES_FETCHED=1
 }
@@ -99,16 +99,16 @@ download_pkgs() {
     # Convert bash array into comma,seperated,string
     local pkgs_csv="$(IFS=,; echo "${__pkgs[*]}")"
 
-    local curl_list="${target}/sdb_temp/curl.txt"
-    awk -v urlprefix="http://${SDB_APT_SOURCES_URL}" \
-        -v outputdir="${target}/sdb_temp" \
+    local curl_list="${target}/bad_temp/curl.txt"
+    awk -v urlprefix="http://${BAD_APT_SOURCES_URL}" \
+        -v outputdir="${target}/bad_temp" \
         -v PKGS="${pkgs_csv}" \
         "${__AWK_FIND_PACKAGES_FILENAMES}" > "${curl_list}" <<< "${__PACKAGES}"
 
     curl --parallel \
          --parallel-immediate \
-         --parallel-max ${SDB_PARALLEL} \
-         --proxy "${SDB_PROXY}" \
+         --parallel-max ${BAD_PARALLEL} \
+         --proxy "${BAD_PROXY}" \
          --config ${curl_list}
 }
 
@@ -146,7 +146,7 @@ extract_pkg() {
 install_pkgs() {
     local target="$1";  shift
     local debs=( $(
-        find "${target}/sdb_temp" -name '*.deb' -printf '/sdb_temp/%f\n'
+        find "${target}/bad_temp" -name '*.deb' -printf '/bad_temp/%f\n'
     ) )
 
     # unpack all packages
@@ -192,17 +192,17 @@ bootstrap_config() {
 
     # Install apt and dpkg configs
     cat <<-EOF > "${target}/etc/apt/sources.list"
-	deb http://${SDB_APT_SOURCES_URL} ${SDB_APT_RELEASE}           ${SDB_APT_COMPONENTS[@]}
-	deb http://${SDB_APT_SOURCES_URL} ${SDB_APT_RELEASE}-updates   ${SDB_APT_COMPONENTS[@]}
-	deb http://${SDB_APT_SOURCES_URL} ${SDB_APT_RELEASE}-backports ${SDB_APT_COMPONENTS[@]}
-	deb http://${SDB_APT_SOURCES_URL} ${SDB_APT_RELEASE}-security  ${SDB_APT_COMPONENTS[@]}
+	deb http://${BAD_APT_SOURCES_URL} ${BAD_APT_RELEASE}           ${BAD_APT_COMPONENTS[@]}
+	deb http://${BAD_APT_SOURCES_URL} ${BAD_APT_RELEASE}-updates   ${BAD_APT_COMPONENTS[@]}
+	deb http://${BAD_APT_SOURCES_URL} ${BAD_APT_RELEASE}-backports ${BAD_APT_COMPONENTS[@]}
+	deb http://${BAD_APT_SOURCES_URL} ${BAD_APT_RELEASE}-security  ${BAD_APT_COMPONENTS[@]}
 	EOF
 
-    if [[ ! -z "${SDB_PROXY}" ]]; then
+    if [[ ! -z "${BAD_PROXY}" ]]; then
         cat <<-EOF > "${target}/etc/apt/apt.conf.d/99-proxy"
 		Acquire {
-		  HTTP::proxy  "${SDB_PROXY}";
-		  HTTPS::proxy "${SDB_PROXY}";
+		  HTTP::proxy  "${BAD_PROXY}";
+		  HTTPS::proxy "${BAD_PROXY}";
 		}
 		EOF
     fi
@@ -223,7 +223,7 @@ bootstrap_config() {
 
 
     #####
-    # Prevent services from starting during the build process 
+    # Prevent services from starting during the build process
     #####
     local prevent_service_startup=(
         "${target}/usr/sbin/policy-rc.d"
@@ -275,7 +275,7 @@ bootstrap_base() {
     populate_pkgs_from_priority pkgs "required"
     download_pkgs "${target}" pkgs
 
-    for deb in ${target}/sdb_temp/*.deb; do
+    for deb in ${target}/bad_temp/*.deb; do
         extract_pkg "${target}" "${deb}"
     done
     bootstrap_config  "${target}"
@@ -323,12 +323,12 @@ setup_root_fs() {
         "${target}/usr"
         "${target}/dev"
         "${target}/etc"
-        "${target}/sdb_temp" # used to transfer deb files before dpkg is init
+        "${target}/bad_temp" # used to transfer deb files before dpkg is init
     )
     local symlinks=()
 
     # `;&` syntax in the case statement indicates fallthrough matching; neat!
-    case "${SDB_ARCH}" in
+    case "${BAD_ARCH}" in
         amd64)      symlinks+=(lib64) ;&
         amd64|i386) symlinks+=(lib32 libx32) ;&
         *)          symlinks+=(bin sbin lib) ;;
@@ -405,7 +405,7 @@ cleanup() {
 
     # excessive cleanup
     local folders_to_remove=(
-        "${target}/sdb_temp"
+        "${target}/bad_temp"
         "${target}/usr/share/doc"
         "${target}/usr/share/man"
         "${target}/var/lib/apt/lists"
@@ -416,24 +416,24 @@ cleanup() {
     sync "${target}"
 }
 
-sdb_usage() {
+bad_usage() {
     default_vars
     cat <<-EOF
-	Usage: sdb /path/to/bootstrap
+	Usage: ./bad.bash /path/to/bootstrap
 	Current Configuration:
-	    SDB_PROXY="${SDB_PROXY}"
-	    SDB_APT_RELEASE="${SDB_APT_RELEASE}"
-	    SDB_APT_SOURCES_URL="${SDB_APT_SOURCES_URL}"
-	    SDB_ARCH="${SDB_ARCH}"
-	    SDB_MINIMAL="${SDB_MINIMAL}"
-	    SDB_APT_COMPONENTS="${SDB_APT_COMPONENTS[@]}"
+	    BAD_PROXY="${BAD_PROXY}"
+	    BAD_APT_RELEASE="${BAD_APT_RELEASE}"
+	    BAD_APT_SOURCES_URL="${BAD_APT_SOURCES_URL}"
+	    BAD_ARCH="${BAD_ARCH}"
+	    BAD_MINIMAL="${BAD_MINIMAL}"
+	    BAD_APT_COMPONENTS="${BAD_APT_COMPONENTS[@]}"
 	EOF
 }
 
-# This function should not be called directly, only via subshells or sdb()
-_sdb() {
+# This function should not be called directly, only via subshells or bad()
+_bad() {
     if [[ ! -v 1 ]]; then
-        sdb_usage
+        bad_usage
         exit 1
     fi
     set -eEuxo pipefail
@@ -479,12 +479,12 @@ _sdb() {
 	EOF
 }
 
-sdb() {
-    # If you source this script and call _sdb directly, any failure will exit
+bad() {
+    # If you source this script and call _bad directly, any failure will exit
     # your main shell. This wrapper ensures that all of the shell changes
     # happen in a subshell and do not propogate to the main bash shell.
-    (_sdb "$@")
+    (_bad "$@")
 }
 
 # AKA --python-- if __name__ == '__main__':
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] && sdb "$@"
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && bad "$@"
