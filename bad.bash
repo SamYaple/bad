@@ -112,22 +112,6 @@ download_pkgs() {
          --config ${curl_list}
 }
 
-populate_tar_compression_opts() {
-    local -n arr="$1";           shift
-    local compression_type="$1"; shift
-
-    case "${compression_type}" in
-        bz2) arr+=(--bzip2) ;;
-        gz)  arr+=(--gzip) ;;
-        xz)  arr+=(--xz) ;;
-        zst) arr+=(--zstd) ;;
-        tar) ;;
-        *)   echo "WARNING: There is an unknown archive extention, letting " \
-                  "tar attempt decompression anyway -- ${compression_type}"  \
-             ;;
-    esac
-}
-
 extract_pkg() {
     local target="$1"; shift
     local pkg="$1";    shift
@@ -139,7 +123,16 @@ extract_pkg() {
         --keep-old-files        # don't replace links; failure if file exists
         --directory "${target}"
     )
-    populate_tar_compression_opts tar_opts "${extention}"
+    case "${extention}" in
+        bz2) tar_opts+=(--bzip2) ;;
+        gz)  tar_opts+=(--gzip) ;;
+        xz)  tar_opts+=(--xz) ;;
+        zst) tar_opts+=(--zstd) ;;
+        tar) ;;
+        *)   echo "WARNING: There is an unknown archive extention, letting " \
+                  "tar attempt decompression anyway -- ${compression_type}"  \
+             ;;
+    esac
     ar -p "${pkg}" "data.tar.${extention}" | tar "${tar_opts[@]}"
 }
 
@@ -188,7 +181,6 @@ bootstrap_config() {
     #       run dpkg postinst properly
     [[ ! -f "${target}/usr/bin/which" ]] && ln -s /usr/bin/which.debianutils "${target}/usr/bin/which"
     [[ ! -f "${target}/usr/bin/awk"   ]] && ln -s /usr/bin/mawk              "${target}/usr/bin/awk"
-    touch ${target}/var/lib/dpkg/status
 
     # Install apt and dpkg configs
     cat <<-EOF > "${target}/etc/apt/sources.list"
