@@ -15,8 +15,4 @@ $ sudo --preserve-env=BAD_PROXY,BAD_ARCH,BAD_APT_SOURCES_URL,BAD_APT_RELEASE ./b
 #
 # Use 'systemd-nspawn -D "/mnt/ubuntu" bash' to spawn a shell
 ########
-
-real    0m12.540s
-user    0m6.044s
-sys     0m1.980s
 ```
